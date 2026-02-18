@@ -133,7 +133,7 @@ def create_vector_store(chunksjson_dir = "db/chunks", persist_directory="db/chro
         with open(chunksjson_dir,"w", encoding="utf-8") as f:
             json.dump(chunks,f,indent =4)
     
-    vectorstore.persist()
+
     
     return vectorstore
     
@@ -171,6 +171,7 @@ def main():
         #4. Embedding and Storing in Vector DB from the jsonfile, also gives what needs to be chunked currently
         create_vector_store(chunksjson_dir="db/chunks",persist_directory="db/chroma_db")
     else :
+        
         create_vector_store(chunksjson_dir="db/chunks",persist_directory="db/chroma_db")
         
 
