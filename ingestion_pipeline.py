@@ -4,8 +4,7 @@ from langchain_text_splitters import CharacterTextSplitter
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from langchain_chroma import Chroma
 from dotenv import load_dotenv
-import time
-import random
+import json
 
 load_dotenv()
 
@@ -70,93 +69,96 @@ def split_documents(documents, chunk_size=1000, chunk_overlap=0):
             print(f"\n and {len(chunks)-5} more chunks")
             
         return chunks
+    
 
+#data loaded in the data as a list of diactionaries and then loading in the json file together
 
-
-def create_vector_store(chunks, persist_directory="db/chroma_db"):
+def save_chunks(chunks, filename="db/chunks"):
+    os.makedirs(os.path.dirname(filename),exist_ok =True)
+    
+    data = [
+        {
+            "index":i,
+            "content": chunk.page_content,
+            "metadata": chunk.metadata
+        }
+        for i,chunk in enumerate(chunks,start=1)  #indexing start from 1
+    ]
+    with open(filename, "w", encoding ="utf-8") as f:
+        json.dump(data,f,indent=4)
+    
+    print("Chunks successfully saved at {filename}")
+    
+    
+    
+def create_vector_store(chunkjson = "db/chunks", persist_directory="db/chroma_db"):
+    """
+    Load chunks from JSON, add them to ChromaDB, and POP them from the JSON list,
+    then save back the updated JSON (so next run continues).
+    """
+    
     print("Creating embeddings and storing in ChromaDB")
-
+    
+    with open(chunkjson,"r",encoding="utf-8") as f:
+        chunks = json.load(f)
+        
     embedding_model = GoogleGenerativeAIEmbeddings(
         model="models/gemini-embedding-001"
     )
-
     # Create (or load) the DB WITHOUT embedding everything at once
     vectorstore = Chroma(
         collection_name="rag",
         embedding_function=embedding_model,
         persist_directory=persist_directory,
         collection_metadata={"hnsw:space": "cosine"},
-    )
+    )  
 
-    MAX_REQUESTS_PER_MINUTE = 100
-    request_count = 0
-    minute_start = time.time()
-
-    total = len(chunks)
-    i = 0
-
-    while i < total:
-        # reset each minute
-        elapsed = time.time() - minute_start
-        if elapsed >= 60:
-            request_count = 0
-            minute_start = time.time()
-            elapsed = 0
-
-        # if hit 100 requests, wait for next minute window
-        if request_count >= MAX_REQUESTS_PER_MINUTE:
-            sleep_for = 60 - elapsed
-            print(f"⏳ 100/min hit. Sleeping {sleep_for:.1f}s...")
-            time.sleep(max(0, sleep_for))
-            request_count = 0
-            minute_start = time.time()
-
-        chunk = chunks[i]
-
-        try:
-            # 1 chunk = 1 request (safe, slower)
-            vectorstore.add_texts(
-                texts=[chunk.page_content],
-                metadatas=[chunk.metadata],
-            )
-            request_count += 1
-            i += 1
-
-            if i % 25 == 0 or i == total:
-                print(f"✅ Embedded {i}/{total}")
-
-        except Exception as e:
-            msg = str(e)
-            if "429" in msg or "RESOURCE_EXHAUSTED" in msg:
-                # obey server hint: it says retryDelay ~37s
-                wait = 40 + random.uniform(0, 5)
-                print(f"⚠️ 429 rate limited. Sleeping {wait:.1f}s then retry...")
-                time.sleep(wait)
-            else:
-                raise
-
+    while chunks:
+        chunk = chunks.pop(0)
+        
+        vectorstore.add_texts(
+            texts=[chunk["content"]],
+            metadatas=[chunk["metadata"]],
+            ids=[f"chunks_{chunk['index']}"]
+        )
+    
     vectorstore.persist()
-    print(f"✅ Done. Saved to {persist_directory}")
+    
     return vectorstore
     
         
+        
+               
 def main():
     print("Main Function is woking")
     
     docs_path = "docs"
+    chunksjson_dir= "db/chunks"
+    os.makedirs("db",exist_ok = True)
     
-    #1. Loading the files
-    documents = load_documents(docs_path)
+    if not os.path.exists(chunksjson_dir):
+        print(f"{chunksjson_dir} not found. Creating it from the docs...")
+        
+                
+    with open(chunksjson_dir,"r",encoding="utf-8") as f:
+        tempchunk=json.load(f)
     
-    #2. Chunking the files
+    last_index = tempchunk[-1]["index"]
     
-    chunks = split_documents(documents)
-    #3. Embedding and Storing in Vector DB
-    
-    vectorstore = create_vector_store(chunks,persist_directory="db/chroma_db")
-    
-
-
+    print("Last Index: ", last_index)
+    if(last_index < 1):
+        docs_path = "docs"
+        #1. Loading the files
+        documents = load_documents(docs_path)
+        #2. Chunking the files
+        chunks = split_documents(documents)
+        #3 Saving the chunks in json format in another file
+        save_chunks(chunks,filename="db/chunks.json")
+        #4. Embedding and Storing in Vector DB from the jsonfile, also gives what needs to be chunked currently
+        vectorstore= create_vector_store(chunksjson_dir="db/chunks.json",persist_directory="db/chroma_db")
+    else :
+        vectorstore = create_vector_store(chunksjson_dir="db/chunks.json",persist_directory="db/chroma_db")
+        
 
 if __name__ == "__main__":
     main()
