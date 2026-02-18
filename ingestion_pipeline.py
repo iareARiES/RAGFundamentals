@@ -87,11 +87,11 @@ def save_chunks(chunks, filename="db/chunks"):
     with open(filename, "w", encoding ="utf-8") as f:
         json.dump(data,f,indent=4)
     
-    print("Chunks successfully saved at {filename}")
+    print(f"Chunks successfully saved at {filename}")
     
     
     
-def create_vector_store(chunkjson = "db/chunks", persist_directory="db/chroma_db"):
+def create_vector_store(chunkjson_dir = "db/chunks", persist_directory="db/chroma_db"):
     """
     Load chunks from JSON, add them to ChromaDB, and POP them from the JSON list,
     then save back the updated JSON (so next run continues).
@@ -99,7 +99,7 @@ def create_vector_store(chunkjson = "db/chunks", persist_directory="db/chroma_db
     
     print("Creating embeddings and storing in ChromaDB")
     
-    with open(chunkjson,"r",encoding="utf-8") as f:
+    with open(chunkjson_dir,"r",encoding="utf-8") as f:
         chunks = json.load(f)
         
     embedding_model = GoogleGenerativeAIEmbeddings(
@@ -136,28 +136,31 @@ def main():
     chunksjson_dir= "db/chunks"
     os.makedirs("db",exist_ok = True)
     
+    #if no json is created then its clear that you have to perform all the steps
     if not os.path.exists(chunksjson_dir):
         print(f"{chunksjson_dir} not found. Creating it from the docs...")
-        
-                
+        docs_path = "docs"
+        documents = load_documents(docs_path)
+        chunks = split_documents(documents)
+        save_chunks(chunks,filename="db/chunks")
+        create_vector_store(chunksjson_dir="db/chunks",persist_directory="db/chroma_db")
+        return
+
+    #if file is present but is empty then also you have to do all the steps
     with open(chunksjson_dir,"r",encoding="utf-8") as f:
         tempchunk=json.load(f)
     
-    last_index = tempchunk[-1]["index"]
-    
-    print("Last Index: ", last_index)
-    if(last_index < 1):
-        docs_path = "docs"
+    if not tempchunk:   #meaning if list is empty
         #1. Loading the files
         documents = load_documents(docs_path)
         #2. Chunking the files
         chunks = split_documents(documents)
         #3 Saving the chunks in json format in another file
-        save_chunks(chunks,filename="db/chunks.json")
+        save_chunks(chunks,filename="db/chunks")
         #4. Embedding and Storing in Vector DB from the jsonfile, also gives what needs to be chunked currently
-        vectorstore= create_vector_store(chunksjson_dir="db/chunks.json",persist_directory="db/chroma_db")
+        create_vector_store(chunksjson_dir="db/chunks",persist_directory="db/chroma_db")
     else :
-        vectorstore = create_vector_store(chunksjson_dir="db/chunks.json",persist_directory="db/chroma_db")
+        create_vector_store(chunksjson_dir="db/chunks",persist_directory="db/chroma_db")
         
 
 if __name__ == "__main__":
