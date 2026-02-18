@@ -116,10 +116,10 @@ def create_vector_store(chunksjson_dir = "db/chunks", persist_directory="db/chro
         persist_directory=persist_directory,
         collection_metadata={"hnsw:space": "cosine"},
     )  
-    #better complexity O(1) from O(n2)
+    #better complexity O(1) from O(n2) better than pop(0)
     chunks.reverse()
     while chunks:
-        chunk = chunks.pop(0)
+        chunk = chunks.pop()
         
         print(f"\n🔹 Processing Chunk Index: {chunk['index']}")
         print(f"   Remaining chunks after pop: {len(chunks)}")
