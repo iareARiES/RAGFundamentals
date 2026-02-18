@@ -55,20 +55,24 @@ def split_documents(documents, chunk_size=1000, chunk_overlap=0):
     
     chunks = text_splitter.split_documents(documents)
     
-    if chunks:
+    if not chunks:
+        raise ValueError("No chunks were produced. Check your documents.")    
+    
+    for i, chunk in enumerate(chunks[:5]):
+        print(f"\n--- Chunk {i+1} ---")
+        print(f"Source: {chunk.metadata['source']}")
+        print(f"Length: {len(chunk.page_content)} characters")
+        print(f"Content:")
+        print(chunk.page_content)
+        print(f"-" * 50)
         
-        for i, chunk in enumerate(chunks[:5]):
-            print(f"\n--- Chunk {i+1} ---")
-            print(f"Source: {chunk.metadata['source']}")
-            print(f"Length: {len(chunk.page_content)} characters")
-            print(f"Content:")
-            print(chunk.page_content)
-            print(f"-" * 50)
+    if len(chunks)>5:
+        print(f"\n and {len(chunks)-5} more chunks")
+
+    return chunks
         
-        if len(chunks)>5:
-            print(f"\n and {len(chunks)-5} more chunks")
-            
-        return chunks
+    
+    
     
 
 #data loaded in the data as a list of diactionaries and then loading in the json file together
@@ -91,7 +95,7 @@ def save_chunks(chunks, filename="db/chunks"):
     
     
     
-def create_vector_store(chunkjson_dir = "db/chunks", persist_directory="db/chroma_db"):
+def create_vector_store(chunksjson_dir = "db/chunks", persist_directory="db/chroma_db"):
     """
     Load chunks from JSON, add them to ChromaDB, and POP them from the JSON list,
     then save back the updated JSON (so next run continues).
@@ -99,7 +103,7 @@ def create_vector_store(chunkjson_dir = "db/chunks", persist_directory="db/chrom
     
     print("Creating embeddings and storing in ChromaDB")
     
-    with open(chunkjson_dir,"r",encoding="utf-8") as f:
+    with open(chunksjson_dir,"r",encoding="utf-8") as f:
         chunks = json.load(f)
         
     embedding_model = GoogleGenerativeAIEmbeddings(
@@ -112,15 +116,22 @@ def create_vector_store(chunkjson_dir = "db/chunks", persist_directory="db/chrom
         persist_directory=persist_directory,
         collection_metadata={"hnsw:space": "cosine"},
     )  
-
+    #better complexity O(1) from O(n2)
+    chunks.reverse()
     while chunks:
         chunk = chunks.pop(0)
+        
+        print(f"\n🔹 Processing Chunk Index: {chunk['index']}")
+        print(f"   Remaining chunks after pop: {len(chunks)}")
         
         vectorstore.add_texts(
             texts=[chunk["content"]],
             metadatas=[chunk["metadata"]],
             ids=[f"chunks_{chunk['index']}"]
         )
+    
+        with open(chunksjson_dir,"w", encoding="utf-8") as f:
+            json.dump(chunks,f,indent =4)
     
     vectorstore.persist()
     
